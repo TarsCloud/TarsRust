@@ -59,56 +59,48 @@ async fn main() -> Result<()> {
 
 ### 服务端示例
 
+在 `.tars` 文件中定义接口：
+
+```tars
+// Hello.tars
+module Hello {
+    interface HelloWorld {
+        int sayHello(string name, out string greeting);
+    };
+};
+```
+
+实现服务：
+
 ```rust
-use std::sync::Arc;
-use tars::{TarsServer, TarsServerConfig, Result};
-use tars::transport::ServerProtocolHandler;
-use tars::util::Context;
-use tars::codec::PackageStatus;
-use async_trait::async_trait;
+use tars::{Application, Result};
 
-struct HelloHandler;
+// 实现 HelloWorld 接口
+struct HelloWorldImp;
 
-#[async_trait]
-impl ServerProtocolHandler for HelloHandler {
-    fn parse_package(&self, buff: &[u8]) -> (usize, PackageStatus) {
-        if buff.len() < 4 {
-            return (0, PackageStatus::Less);
-        }
-        let len = u32::from_be_bytes([buff[0], buff[1], buff[2], buff[3]]) as usize;
-        if buff.len() >= len {
-            (len, PackageStatus::Full)
-        } else {
-            (0, PackageStatus::Less)
-        }
+impl HelloWorldImp {
+    // sayHello 返回问候消息
+    fn say_hello(&self, name: &str) -> (i32, String) {
+        let greeting = format!("Hello, {}! Welcome to Tars.", name);
+        (0, greeting)
     }
-
-    async fn invoke(&self, ctx: &mut Context, pkg: &[u8]) -> Vec<u8> {
-        // 解析请求并处理业务逻辑
-        // 返回编码后的响应
-        vec![]
-    }
-
-    fn invoke_timeout(&self, _pkg: &[u8]) -> Vec<u8> {
-        // 返回超时错误响应
-        vec![]
-    }
-
-    fn get_close_msg(&self) -> Vec<u8> {
-        vec![]
-    }
-
-    fn do_close(&self, _ctx: &Context) {}
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let handler = Arc::new(HelloHandler);
-    let config = TarsServerConfig::tcp("0.0.0.0:18015");
-    let server = TarsServer::new(handler, config);
+    // 获取服务配置
+    let cfg = Application::get_server_config();
+    println!("启动服务: {}.{}", cfg.app, cfg.server);
 
-    println!("服务器监听 0.0.0.0:18015");
-    server.serve().await
+    // 创建服务实现
+    let imp = HelloWorldImp;
+
+    // 注册 servant 并启动服务
+    let app = Application::new();
+    app.add_servant("Hello.HelloServer.HelloWorldObj", imp)?;
+
+    println!("服务运行中...");
+    app.run().await
 }
 ```
 
@@ -209,10 +201,8 @@ TarsRust 可以与任何 TARS 服务端通信。以下是调用 TarsGo 服务端
 ### 1. 定义接口 (Hello.tars)
 
 ```tars
-module Hello
-{
-    interface HelloWorld
-    {
+module Hello {
+    interface HelloWorld {
         int sayHello(string name, out string greeting);
     };
 };
@@ -224,52 +214,44 @@ module Hello
 // HelloWorldImp.go
 package main
 
-import "context"
-
 type HelloWorldImp struct{}
 
-func (h *HelloWorldImp) SayHello(ctx context.Context, name string, greeting *string) (int32, error) {
+func (h *HelloWorldImp) SayHello(name string, greeting *string) (int32, error) {
     *greeting = "Hello, " + name + "!"
     return 0, nil
+}
+
+// main.go
+func main() {
+    cfg := tars.GetServerConfig()
+    imp := new(HelloWorldImp)
+    app := new(Hello.HelloWorld)
+    app.AddServant(imp, cfg.App+"."+cfg.Server+".HelloWorldObj")
+    tars.Run()
 }
 ```
 
 ### 3. Rust 客户端
 
 ```rust
-use std::collections::HashMap;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tars::{Communicator, Result};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 连接到 Go TARS 服务端
-    let mut stream = TcpStream::connect("127.0.0.1:18015").await?;
+async fn main() -> Result<()> {
+    // 创建通信器
+    let comm = Communicator::new();
 
-    // 使用 TARS 协议编码请求
-    let request = encode_request(
-        1,                                    // 协议版本
-        0,                                    // 包类型（普通请求）
-        1,                                    // 请求 ID
-        "Hello.HelloServer.HelloWorldObj",    // 服务名
-        "sayHello",                           // 函数名
-        &encode_say_hello_params("World"),    // 编码后的参数
-        3000,                                 // 超时时间
-        &HashMap::new(),                      // context
-        &HashMap::new(),                      // status
-    );
+    // 创建到 Go 服务端的代理
+    let proxy = comm.string_to_proxy(
+        "Hello.HelloServer.HelloWorldObj@tcp -h 127.0.0.1 -p 18015"
+    )?;
 
-    // 发送请求
-    stream.write_all(&request).await?;
+    // 调用 sayHello 方法
+    let name = "Rust Client";
+    let (ret, greeting) = proxy.say_hello(name).await?;
 
-    // 读取响应
-    let mut response = vec![0u8; 4096];
-    let n = stream.read(&mut response).await?;
-    response.truncate(n);
-
-    // 解析响应
-    let result = parse_response(&response)?;
-    println!("结果: {:?}", result);
+    println!("返回值: {}", ret);
+    println!("问候语: {}", greeting);
 
     Ok(())
 }

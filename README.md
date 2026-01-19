@@ -59,56 +59,48 @@ async fn main() -> Result<()> {
 
 ### Server Example
 
+Define your interface in a `.tars` file:
+
+```tars
+// Hello.tars
+module Hello {
+    interface HelloWorld {
+        int sayHello(string name, out string greeting);
+    };
+};
+```
+
+Implement the service:
+
 ```rust
-use std::sync::Arc;
-use tars::{TarsServer, TarsServerConfig, Result};
-use tars::transport::ServerProtocolHandler;
-use tars::util::Context;
-use tars::codec::PackageStatus;
-use async_trait::async_trait;
+use tars::{Application, Result};
 
-struct HelloHandler;
+// Implement the HelloWorld interface
+struct HelloWorldImp;
 
-#[async_trait]
-impl ServerProtocolHandler for HelloHandler {
-    fn parse_package(&self, buff: &[u8]) -> (usize, PackageStatus) {
-        if buff.len() < 4 {
-            return (0, PackageStatus::Less);
-        }
-        let len = u32::from_be_bytes([buff[0], buff[1], buff[2], buff[3]]) as usize;
-        if buff.len() >= len {
-            (len, PackageStatus::Full)
-        } else {
-            (0, PackageStatus::Less)
-        }
+impl HelloWorldImp {
+    // sayHello returns a greeting message
+    fn say_hello(&self, name: &str) -> (i32, String) {
+        let greeting = format!("Hello, {}! Welcome to Tars.", name);
+        (0, greeting)
     }
-
-    async fn invoke(&self, ctx: &mut Context, pkg: &[u8]) -> Vec<u8> {
-        // Parse request and handle business logic
-        // Return encoded response
-        vec![]
-    }
-
-    fn invoke_timeout(&self, _pkg: &[u8]) -> Vec<u8> {
-        // Return timeout error response
-        vec![]
-    }
-
-    fn get_close_msg(&self) -> Vec<u8> {
-        vec![]
-    }
-
-    fn do_close(&self, _ctx: &Context) {}
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let handler = Arc::new(HelloHandler);
-    let config = TarsServerConfig::tcp("0.0.0.0:18015");
-    let server = TarsServer::new(handler, config);
+    // Get server config
+    let cfg = Application::get_server_config();
+    println!("Starting server: {}.{}", cfg.app, cfg.server);
 
-    println!("Server listening on 0.0.0.0:18015");
-    server.serve().await
+    // Create service implementation
+    let imp = HelloWorldImp;
+
+    // Register servant and start server
+    let app = Application::new();
+    app.add_servant("Hello.HelloServer.HelloWorldObj", imp)?;
+
+    println!("Server is running...");
+    app.run().await
 }
 ```
 
@@ -209,10 +201,8 @@ TarsRust can communicate with any TARS server. Here's an example of calling a Ta
 ### 1. Define Interface (Hello.tars)
 
 ```tars
-module Hello
-{
-    interface HelloWorld
-    {
+module Hello {
+    interface HelloWorld {
         int sayHello(string name, out string greeting);
     };
 };
@@ -224,52 +214,44 @@ module Hello
 // HelloWorldImp.go
 package main
 
-import "context"
-
 type HelloWorldImp struct{}
 
-func (h *HelloWorldImp) SayHello(ctx context.Context, name string, greeting *string) (int32, error) {
+func (h *HelloWorldImp) SayHello(name string, greeting *string) (int32, error) {
     *greeting = "Hello, " + name + "!"
     return 0, nil
+}
+
+// main.go
+func main() {
+    cfg := tars.GetServerConfig()
+    imp := new(HelloWorldImp)
+    app := new(Hello.HelloWorld)
+    app.AddServant(imp, cfg.App+"."+cfg.Server+".HelloWorldObj")
+    tars.Run()
 }
 ```
 
 ### 3. Rust Client
 
 ```rust
-use std::collections::HashMap;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tars::{Communicator, Result};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to Go TARS server
-    let mut stream = TcpStream::connect("127.0.0.1:18015").await?;
+async fn main() -> Result<()> {
+    // Create communicator
+    let comm = Communicator::new();
 
-    // Encode request using TARS protocol
-    let request = encode_request(
-        1,                                    // version
-        0,                                    // packet type (normal)
-        1,                                    // request id
-        "Hello.HelloServer.HelloWorldObj",    // servant name
-        "sayHello",                           // function name
-        &encode_say_hello_params("World"),    // encoded parameters
-        3000,                                 // timeout
-        &HashMap::new(),                      // context
-        &HashMap::new(),                      // status
-    );
+    // Create proxy to the Go server
+    let proxy = comm.string_to_proxy(
+        "Hello.HelloServer.HelloWorldObj@tcp -h 127.0.0.1 -p 18015"
+    )?;
 
-    // Send request
-    stream.write_all(&request).await?;
+    // Call sayHello method
+    let name = "Rust Client";
+    let (ret, greeting) = proxy.say_hello(name).await?;
 
-    // Read response
-    let mut response = vec![0u8; 4096];
-    let n = stream.read(&mut response).await?;
-    response.truncate(n);
-
-    // Parse response
-    let result = parse_response(&response)?;
-    println!("Result: {:?}", result);
+    println!("Return: {}", ret);
+    println!("Greeting: {}", greeting);
 
     Ok(())
 }
