@@ -1,6 +1,6 @@
 //! QueryF protocol types for service discovery
 //!
-//! Corresponds to QueryF.tars in TarsGo
+//! Corresponds to QueryF.tars in TarsRust
 
 use crate::codec::{Buffer, Reader};
 use crate::Result;

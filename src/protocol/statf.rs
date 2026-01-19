@@ -1,6 +1,6 @@
 //! StatF protocol types for statistics reporting
 //!
-//! Corresponds to StatF.tars in TarsGo
+//! Corresponds to StatF.tars in TarsRust
 
 use crate::codec::{Buffer, Reader};
 use crate::Result;

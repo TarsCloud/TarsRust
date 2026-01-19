@@ -1,6 +1,6 @@
 //! LogF protocol types for remote logging
 //!
-//! Corresponds to LogF.tars in TarsGo
+//! Corresponds to LogF.tars in TarsRust
 
 use crate::codec::{Buffer, Reader};
 use crate::Result;

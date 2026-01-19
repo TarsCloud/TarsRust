@@ -2,7 +2,7 @@
 name = "tars"
 version = "0.1.0"
 edition = "2021"
-authors = ["TarsGo Team"]
+authors = ["TarsRust Team"]
 description = "Tars RPC Framework for Rust - A high-performance microservice communication framework"
 license = "BSD-3-Clause"
 repository = "https://github.com/TarsCloud/TarsRust"
