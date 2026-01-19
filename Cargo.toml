@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["TarsGo Team"]
 description = "Tars RPC Framework for Rust - A high-performance microservice communication framework"
 license = "BSD-3-Clause"
-repository = "https://github.com/TarsCloud/TarsGo"
+repository = "https://github.com/TarsCloud/TarsRust"
 keywords = ["rpc", "microservice", "tars", "distributed"]
 categories = ["network-programming", "asynchronous"]
 
