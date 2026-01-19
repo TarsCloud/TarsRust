@@ -1,0 +1,27 @@
+# Rust 编译产物
+/target/
+**/*.rs.bk
+
+# Claude Code
+.claude/
+
+# Cargo.lock 通常提交（库项目可选择不提交）
+# Cargo.lock
+
+# IDE 和编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 调试文件
+*.pdb
+
+# 环境变量
+.env
+.env.local
+
+# 日志文件
+*.log

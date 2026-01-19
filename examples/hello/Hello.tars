@@ -1,0 +1,5 @@
+module Hello {
+    interface HelloWorld {
+        int sayHello(string name, out string greeting);
+    };
+};

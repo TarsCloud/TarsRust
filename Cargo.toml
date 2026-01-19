@@ -1,0 +1,71 @@
+[package]
+name = "tars"
+version = "0.1.0"
+edition = "2021"
+authors = ["TarsGo Team"]
+description = "Tars RPC Framework for Rust - A high-performance microservice communication framework"
+license = "BSD-3-Clause"
+repository = "https://github.com/TarsCloud/TarsGo"
+keywords = ["rpc", "microservice", "tars", "distributed"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Networking
+tokio-rustls = "0.25"
+rustls = "0.22"
+rustls-pemfile = "2.0"
+
+# Serialization
+bytes = "1.5"
+byteorder = "1.5"
+
+# Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+parking_lot = "0.12"
+dashmap = "5.5"
+once_cell = "1.19"
+rand = "0.8"
+crc32fast = "1.3"
+md-5 = "0.10"
+hex = "0.4"
+
+# Time
+chrono = "0.4"
+
+# Async traits
+async-trait = "0.1"
+
+# Config parsing
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Signal handling
+signal-hook = "0.3"
+signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
+
+# Atomic operations
+crossbeam = "0.8"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+tls = []
+opentelemetry = []
+
+[[example]]
+name = "client"
+path = "examples/client.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
