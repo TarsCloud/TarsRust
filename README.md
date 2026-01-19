@@ -9,7 +9,7 @@ A high-performance RPC framework for Rust, compatible with the [TARS](https://gi
 
 ## Overview
 
-TarsRust is the Rust implementation of the TARS RPC framework, providing the same functionality as [TarsGo](https://github.com/TarsCloud/TarsGo) and [TarsCpp](https://github.com/TarsCloud/TarsCpp). It enables Rust applications to seamlessly integrate with TARS microservices infrastructure.
+TarsRust is the Rust implementation of the TARS RPC framework, providing the same functionality as [TarsCpp](https://github.com/TarsCloud/TarsCpp) and other TARS language implementations. It enables Rust applications to seamlessly integrate with TARS microservices infrastructure.
 
 ## Features
 
@@ -197,9 +197,9 @@ let config = TarsServerConfig::tcp("0.0.0.0:18015")
     .with_idle_timeout(Duration::from_secs(600));
 ```
 
-## Working with TARS Go Server
+## Working with TARS Server
 
-TarsRust can communicate with any TARS server. Here's an example of calling a TarsGo server:
+TarsRust can communicate with any TARS server. Here's an example of calling a TARS server:
 
 ### 1. Define Interface (Hello.tars)
 
@@ -334,7 +334,7 @@ const CONNECT_TIMEOUT: u64 = consts::DEFAULT_CONNECT_TIMEOUT; // 3000
 
 ### Prerequisites
 
-1. Start a TarsGo HelloWorld server:
+1. Start a Go HelloWorld server:
 
 ```bash
 cd examples/hello
@@ -385,7 +385,7 @@ This project is licensed under the BSD-3-Clause License - see the [LICENSE](LICE
 ## Related Projects
 
 - [TARS](https://github.com/TarsCloud/Tars) - TARS Framework
-- [TarsGo](https://github.com/TarsCloud/TarsGo) - Go implementation
+- [Tars-Go](https://github.com/TarsCloud/TarsGo) - Go implementation
 - [TarsCpp](https://github.com/TarsCloud/TarsCpp) - C++ implementation
 - [TarsJava](https://github.com/TarsCloud/TarsJava) - Java implementation
 - [TarsPHP](https://github.com/TarsCloud/TarsPHP) - PHP implementation

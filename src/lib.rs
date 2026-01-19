@@ -1,7 +1,7 @@
 //! # Tars RPC Framework for Rust
 //!
 //! Tars is a high-performance RPC framework that supports multiple programming languages.
-//! This is the Rust implementation providing the same functionality as TarsGo.
+//! This is the Rust implementation providing the same functionality as other TARS language implementations.
 //!
 //! ## Architecture
 //!

@@ -9,7 +9,7 @@ Rust 语言实现的高性能 RPC 框架，与 [TARS](https://github.com/TarsClo
 
 ## 概述
 
-TarsRust 是 TARS RPC 框架的 Rust 实现，提供与 [TarsGo](https://github.com/TarsCloud/TarsGo) 和 [TarsCpp](https://github.com/TarsCloud/TarsCpp) 相同的功能。它使 Rust 应用程序能够无缝集成到 TARS 微服务基础设施中。
+TarsRust 是 TARS RPC 框架的 Rust 实现，提供与 [TarsCpp](https://github.com/TarsCloud/TarsCpp) 和其他 TARS 语言实现相同的功能。它使 Rust 应用程序能够无缝集成到 TARS 微服务基础设施中。
 
 ## 特性
 
@@ -197,9 +197,9 @@ let config = TarsServerConfig::tcp("0.0.0.0:18015")
     .with_idle_timeout(Duration::from_secs(600));  // 空闲超时
 ```
 
-## 与 TarsGo 服务端交互
+## 与 TARS 服务端交互
 
-TarsRust 可以与任何 TARS 服务端通信。以下是调用 TarsGo 服务端的示例：
+TarsRust 可以与任何 TARS 服务端通信。以下是调用 TARS 服务端的示例：
 
 ### 1. 定义接口 (Hello.tars)
 
@@ -334,7 +334,7 @@ const CONNECT_TIMEOUT: u64 = consts::DEFAULT_CONNECT_TIMEOUT; // 3000
 
 ### 前置条件
 
-1. 启动 TarsGo HelloWorld 服务端：
+1. 启动 Go 版 HelloWorld 服务端：
 
 ```bash
 cd examples/hello
@@ -385,7 +385,7 @@ Function result:
 ## 相关项目
 
 - [TARS](https://github.com/TarsCloud/Tars) - TARS 框架
-- [TarsGo](https://github.com/TarsCloud/TarsGo) - Go 语言实现
+- [Tars-Go](https://github.com/TarsCloud/TarsGo) - Go 语言实现
 - [TarsCpp](https://github.com/TarsCloud/TarsCpp) - C++ 语言实现
 - [TarsJava](https://github.com/TarsCloud/TarsJava) - Java 语言实现
 - [TarsPHP](https://github.com/TarsCloud/TarsPHP) - PHP 语言实现
