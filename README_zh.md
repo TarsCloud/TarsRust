@@ -2,6 +2,9 @@
 
 [English](./README.md)
 
+> **警告**
+> 这是一个早期实验版本，API 不稳定，可能会发生重大变化。**请勿用于生产环境。**
+
 Rust 语言实现的高性能 RPC 框架，与 [TARS](https://github.com/TarsCloud/Tars) 生态系统完全兼容。
 
 ## 概述

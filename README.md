@@ -2,6 +2,9 @@
 
 [中文文档](./README_zh.md)
 
+> **Warning**
+> This is an early experimental version. The API is unstable and may change significantly. **Do NOT use in production environments.**
+
 A high-performance RPC framework for Rust, compatible with the [TARS](https://github.com/TarsCloud/Tars) ecosystem.
 
 ## Overview
