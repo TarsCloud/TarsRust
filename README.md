@@ -211,26 +211,31 @@ module Hello {
 };
 ```
 
-### 2. Go Server Implementation
+### 2. Rust Server Implementation
 
-```go
-// HelloWorldImp.go
-package main
+```rust
+use tars::{Application, Result};
 
-type HelloWorldImp struct{}
+// Implement the HelloWorld interface
+struct HelloWorldImp;
 
-func (h *HelloWorldImp) SayHello(name string, greeting *string) (int32, error) {
-    *greeting = "Hello, " + name + "!"
-    return 0, nil
+impl HelloWorldImp {
+    fn say_hello(&self, name: &str) -> (i32, String) {
+        let greeting = format!("Hello, {}!", name);
+        (0, greeting)
+    }
 }
 
-// main.go
-func main() {
-    cfg := tars.GetServerConfig()
-    imp := new(HelloWorldImp)
-    app := new(Hello.HelloWorld)
-    app.AddServant(imp, cfg.App+"."+cfg.Server+".HelloWorldObj")
-    tars.Run()
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cfg = Application::get_server_config();
+    let imp = HelloWorldImp;
+
+    let app = Application::new();
+    app.add_servant("Hello.HelloServer.HelloWorldObj", imp)?;
+
+    println!("Server running on {}:{}", cfg.host, cfg.port);
+    app.run().await
 }
 ```
 
@@ -244,7 +249,7 @@ async fn main() -> Result<()> {
     // Create communicator
     let comm = Communicator::new();
 
-    // Create proxy to the Go server
+    // Create proxy to the server
     let proxy = comm.string_to_proxy(
         "Hello.HelloServer.HelloWorldObj@tcp -h 127.0.0.1 -p 18015"
     )?;
@@ -334,15 +339,13 @@ const CONNECT_TIMEOUT: u64 = consts::DEFAULT_CONNECT_TIMEOUT; // 3000
 
 ### Prerequisites
 
-1. Start a Go HelloWorld server:
+1. Start the TarsRust HelloWorld server:
 
 ```bash
-cd examples/hello
-go build -o HelloServer
-./HelloServer --config HelloServer.conf
+cargo run --example server
 ```
 
-2. Run the Rust client:
+2. Run the TarsRust client:
 
 ```bash
 cargo run --example client

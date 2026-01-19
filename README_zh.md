@@ -211,26 +211,31 @@ module Hello {
 };
 ```
 
-### 2. Go 服务端实现
+### 2. Rust 服务端实现
 
-```go
-// HelloWorldImp.go
-package main
+```rust
+use tars::{Application, Result};
 
-type HelloWorldImp struct{}
+// 实现 HelloWorld 接口
+struct HelloWorldImp;
 
-func (h *HelloWorldImp) SayHello(name string, greeting *string) (int32, error) {
-    *greeting = "Hello, " + name + "!"
-    return 0, nil
+impl HelloWorldImp {
+    fn say_hello(&self, name: &str) -> (i32, String) {
+        let greeting = format!("Hello, {}!", name);
+        (0, greeting)
+    }
 }
 
-// main.go
-func main() {
-    cfg := tars.GetServerConfig()
-    imp := new(HelloWorldImp)
-    app := new(Hello.HelloWorld)
-    app.AddServant(imp, cfg.App+"."+cfg.Server+".HelloWorldObj")
-    tars.Run()
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cfg = Application::get_server_config();
+    let imp = HelloWorldImp;
+
+    let app = Application::new();
+    app.add_servant("Hello.HelloServer.HelloWorldObj", imp)?;
+
+    println!("服务运行在 {}:{}", cfg.host, cfg.port);
+    app.run().await
 }
 ```
 
@@ -244,7 +249,7 @@ async fn main() -> Result<()> {
     // 创建通信器
     let comm = Communicator::new();
 
-    // 创建到 Go 服务端的代理
+    // 创建服务代理
     let proxy = comm.string_to_proxy(
         "Hello.HelloServer.HelloWorldObj@tcp -h 127.0.0.1 -p 18015"
     )?;
@@ -334,15 +339,13 @@ const CONNECT_TIMEOUT: u64 = consts::DEFAULT_CONNECT_TIMEOUT; // 3000
 
 ### 前置条件
 
-1. 启动 Go 版 HelloWorld 服务端：
+1. 启动 TarsRust HelloWorld 服务端：
 
 ```bash
-cd examples/hello
-go build -o HelloServer
-./HelloServer --config HelloServer.conf
+cargo run --example server
 ```
 
-2. 运行 Rust 客户端：
+2. 运行 TarsRust 客户端：
 
 ```bash
 cargo run --example client
