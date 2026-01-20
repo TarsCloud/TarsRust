@@ -7,16 +7,24 @@
 //! - **TarsClient**: Client-side connection management
 //! - **TarsServer**: Server-side listener management
 //! - **Connection**: Single TCP/UDP connection handling
+//! - **TLS**: TLS utilities for secure connections
 
 mod client;
 mod server;
 mod config;
 mod simple_client;
+pub mod tls;
 
 pub use client::TarsClient;
 pub use server::TarsServer;
 pub use config::{TarsClientConfig, TarsServerConfig};
 pub use simple_client::{SimpleTarsClient, AsyncSimpleTarsClient};
+pub use tls::{
+    load_certs, load_private_key,
+    create_client_config, create_client_config_with_native_roots, create_insecure_client_config,
+    create_mtls_client_config, create_server_config, create_mtls_server_config,
+    create_tls_connector, create_tls_acceptor, parse_server_name,
+};
 
 use crate::codec::PackageStatus;
 

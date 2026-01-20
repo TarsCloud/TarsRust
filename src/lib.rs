@@ -50,7 +50,7 @@ pub use protocol::{EndpointF, LogInfo, StatMicMsgHead, StatMicMsgBody, StatInfo}
 pub use endpoint::Endpoint;
 pub use selector::{Selector, HashType};
 pub use transport::{TarsClient, TarsServer, TarsClientConfig, TarsServerConfig};
-pub use registry::{Registrar, TarsRegistry, DirectRegistrar, EndpointManager};
+pub use registry::{Registrar, TarsRegistry, DirectRegistrar, EndpointManager, RegistryCircuitBreaker, NodeCircuitBreaker};
 pub use adapter::AdapterProxy;
 pub use filter::{ClientFilter, ServerFilter, ClientFilterMiddleware, ServerFilterMiddleware};
 pub use servant::ServantProxy;

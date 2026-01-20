@@ -4,14 +4,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Instant;
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use parking_lot::Mutex;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, warn, info};
+use tokio_rustls::TlsConnector;
 
 use crate::{Result, TarsError};
 use crate::codec::PackageStatus;
 use super::{TarsClientConfig, ClientProtocol};
+use super::tls::parse_server_name;
 
 /// Message to be sent
 struct SendMessage {
@@ -137,7 +139,7 @@ impl TarsClient {
     /// Connect and handle communication
     async fn connect_and_handle(&self, send_rx: &mut mpsc::Receiver<SendMessage>) -> Result<()> {
         // Connect with timeout
-        let stream = tokio::time::timeout(
+        let tcp_stream = tokio::time::timeout(
             self.config.dial_timeout,
             TcpStream::connect(&self.address),
         )
@@ -146,61 +148,93 @@ impl TarsClient {
         .map_err(TarsError::Transport)?;
 
         // Set TCP options
-        stream.set_nodelay(true)?;
+        tcp_stream.set_nodelay(true)?;
 
-        let (mut read_half, mut write_half) = stream.into_split();
+        // Check if TLS is enabled
+        if self.config.is_ssl() {
+            // TLS connection
+            let tls_config = self.config.tls_config.as_ref()
+                .ok_or_else(|| TarsError::Config("TLS config not set for SSL connection".into()))?;
 
+            let server_name = parse_server_name(&self.address)?;
+            let connector = TlsConnector::from(tls_config.clone());
+
+            info!("Establishing TLS connection to {}", self.address);
+
+            let tls_stream = tokio::time::timeout(
+                self.config.dial_timeout,
+                connector.connect(server_name, tcp_stream),
+            )
+            .await
+            .map_err(|_| TarsError::Timeout(self.config.dial_timeout.as_millis() as u64))?
+            .map_err(|e| TarsError::Config(format!("TLS handshake failed: {}", e)))?;
+
+            info!("TLS connection established to {}", self.address);
+
+            let (read_half, write_half) = tokio::io::split(tls_stream);
+            self.handle_connection(read_half, write_half, send_rx).await
+        } else {
+            // Plain TCP connection
+            let (read_half, write_half) = tcp_stream.into_split();
+            self.handle_connection(read_half, write_half, send_rx).await
+        }
+    }
+
+    /// Handle read/write on established connection
+    async fn handle_connection<R, W>(
+        &self,
+        mut read_half: R,
+        mut write_half: W,
+        send_rx: &mut mpsc::Receiver<SendMessage>,
+    ) -> Result<()>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send,
+    {
         // Spawn read task
         let protocol = Arc::clone(&self.protocol);
         let read_timeout = self.config.read_timeout;
 
-        let read_handle = tokio::spawn({
-            let closed = AtomicBool::new(false);
-            async move {
-                let mut buffer = vec![0u8; 4096];
-                let mut accumulated = Vec::new();
+        let read_handle = tokio::spawn(async move {
+            let mut buffer = vec![0u8; 4096];
+            let mut accumulated = Vec::new();
 
-                loop {
-                    if closed.load(Ordering::SeqCst) {
+            loop {
+                match tokio::time::timeout(read_timeout, read_half.read(&mut buffer)).await {
+                    Ok(Ok(0)) => {
+                        debug!("Connection closed by peer");
                         break;
                     }
+                    Ok(Ok(n)) => {
+                        accumulated.extend_from_slice(&buffer[..n]);
 
-                    match tokio::time::timeout(read_timeout, read_half.read(&mut buffer)).await {
-                        Ok(Ok(0)) => {
-                            debug!("Connection closed by peer");
-                            break;
-                        }
-                        Ok(Ok(n)) => {
-                            accumulated.extend_from_slice(&buffer[..n]);
-
-                            // Parse complete packages
-                            loop {
-                                let (pkg_len, status) = protocol.parse_package(&accumulated);
-                                match status {
-                                    PackageStatus::Full => {
-                                        let pkg = accumulated.drain(..pkg_len).collect();
-                                        protocol.recv(pkg);
-                                    }
-                                    PackageStatus::Less => break,
-                                    PackageStatus::Error => {
-                                        error!("Package parse error");
-                                        return Err(TarsError::Protocol("package parse error".into()));
-                                    }
+                        // Parse complete packages
+                        loop {
+                            let (pkg_len, status) = protocol.parse_package(&accumulated);
+                            match status {
+                                PackageStatus::Full => {
+                                    let pkg = accumulated.drain(..pkg_len).collect();
+                                    protocol.recv(pkg);
+                                }
+                                PackageStatus::Less => break,
+                                PackageStatus::Error => {
+                                    error!("Package parse error");
+                                    return Err(TarsError::Protocol("package parse error".into()));
                                 }
                             }
                         }
-                        Ok(Err(e)) => {
-                            error!("Read error: {}", e);
-                            return Err(TarsError::Transport(e));
-                        }
-                        Err(_) => {
-                            // Timeout - check idle
-                            continue;
-                        }
+                    }
+                    Ok(Err(e)) => {
+                        error!("Read error: {}", e);
+                        return Err(TarsError::Transport(e));
+                    }
+                    Err(_) => {
+                        // Timeout - check idle
+                        continue;
                     }
                 }
-                Ok(())
             }
+            Ok(())
         });
 
         // Write loop

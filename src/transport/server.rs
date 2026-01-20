@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Instant;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
 use parking_lot::Mutex;
 use tracing::{debug, error, info, warn};
+use tokio_rustls::TlsAcceptor;
 
 use crate::{Result, TarsError};
 use crate::codec::PackageStatus;
@@ -46,7 +47,17 @@ impl TarsServer {
     /// Start listening and serving
     pub async fn serve(self: Arc<Self>) -> Result<()> {
         let listener = TcpListener::bind(&self.config.address).await?;
-        info!("Server listening on {}", self.config.address);
+
+        // Create TLS acceptor if SSL is enabled
+        let tls_acceptor = if self.config.is_ssl() {
+            let tls_config = self.config.tls_config.as_ref()
+                .ok_or_else(|| TarsError::Config("TLS config not set for SSL server".into()))?;
+            info!("Server listening on {} (TLS enabled)", self.config.address);
+            Some(TlsAcceptor::from(tls_config.clone()))
+        } else {
+            info!("Server listening on {}", self.config.address);
+            None
+        };
 
         loop {
             if self.closed.load(Ordering::SeqCst) {
@@ -57,8 +68,28 @@ impl TarsServer {
                 Ok(Ok((stream, addr))) => {
                     self.num_conn.fetch_add(1, Ordering::SeqCst);
                     let server = Arc::clone(&self);
+                    let tls_acceptor = tls_acceptor.clone();
+
                     tokio::spawn(async move {
-                        if let Err(e) = server.handle_connection(stream, addr).await {
+                        let result = if let Some(acceptor) = tls_acceptor {
+                            // TLS connection
+                            match acceptor.accept(stream).await {
+                                Ok(tls_stream) => {
+                                    debug!("TLS connection established from {}", addr);
+                                    let (read_half, write_half) = tokio::io::split(tls_stream);
+                                    server.handle_connection_generic(read_half, write_half, addr).await
+                                }
+                                Err(e) => {
+                                    warn!("TLS handshake failed from {}: {}", addr, e);
+                                    Err(TarsError::Config(format!("TLS handshake failed: {}", e)))
+                                }
+                            }
+                        } else {
+                            // Plain TCP connection
+                            server.handle_connection(stream, addr).await
+                        };
+
+                        if let Err(e) = result {
                             debug!("Connection error: {}", e);
                         }
                         server.num_conn.fetch_sub(1, Ordering::SeqCst);
@@ -77,15 +108,28 @@ impl TarsServer {
         Ok(())
     }
 
-    /// Handle a single connection
+    /// Handle a single TCP connection
     async fn handle_connection(&self, stream: TcpStream, addr: SocketAddr) -> Result<()> {
         debug!("New connection from {}", addr);
 
         // Set TCP options
         stream.set_nodelay(self.config.tcp_no_delay)?;
 
-        let (mut read_half, mut write_half) = stream.into_split();
+        let (read_half, write_half) = stream.into_split();
+        self.handle_connection_generic(read_half, write_half, addr).await
+    }
 
+    /// Handle connection with generic read/write halves (works for both TCP and TLS)
+    async fn handle_connection_generic<R, W>(
+        &self,
+        mut read_half: R,
+        mut write_half: W,
+        addr: SocketAddr,
+    ) -> Result<()>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
         let mut buffer = vec![0u8; self.config.tcp_read_buffer];
         let mut accumulated = Vec::new();
 

@@ -17,6 +17,7 @@ tokio = { version = "1.35", features = ["full"] }
 tokio-rustls = "0.25"
 rustls = "0.22"
 rustls-pemfile = "2.0"
+webpki-roots = "0.26"
 
 # Serialization
 bytes = "1.5"

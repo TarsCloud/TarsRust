@@ -1,10 +1,20 @@
 //! # Registry Module
 //!
 //! Service registration and discovery interface with full QueryF protocol support.
+//!
+//! ## Circuit Breaker
+//!
+//! This module implements a circuit breaker pattern for registry nodes:
+//! - Each registry node (IP:Port) has its own circuit breaker state
+//! - Nodes are marked as unavailable after timeout or error
+//! - Automatic recovery after a configurable interval
 
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
+use parking_lot::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::protocol::queryf::{
@@ -16,6 +26,169 @@ use crate::codec::{Buffer, Reader};
 use crate::transport::AsyncSimpleTarsClient;
 use crate::{Endpoint, Result, TarsError};
 use crate::endpoint::ServantInstance;
+
+/// Circuit breaker state for a single registry node
+#[derive(Debug)]
+pub struct NodeCircuitBreaker {
+    /// Node address (ip:port)
+    address: String,
+    /// Whether the node is available
+    available: AtomicBool,
+    /// Consecutive failure count
+    fail_count: AtomicI32,
+    /// Last failure timestamp (unix seconds)
+    last_fail_time: AtomicI64,
+    /// Last success timestamp (unix seconds)
+    last_success_time: AtomicI64,
+    /// Circuit open time (when it was marked unavailable)
+    circuit_open_time: AtomicI64,
+}
+
+impl NodeCircuitBreaker {
+    /// Create a new circuit breaker for a node
+    pub fn new(address: &str) -> Self {
+        let now = now_secs();
+        Self {
+            address: address.to_string(),
+            available: AtomicBool::new(true),
+            fail_count: AtomicI32::new(0),
+            last_fail_time: AtomicI64::new(0),
+            last_success_time: AtomicI64::new(now),
+            circuit_open_time: AtomicI64::new(0),
+        }
+    }
+
+    /// Check if the node is available
+    pub fn is_available(&self) -> bool {
+        if self.available.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        // Check if we should try to recover (half-open state)
+        let now = now_secs();
+        let open_time = self.circuit_open_time.load(Ordering::SeqCst);
+
+        // Try to recover after REGISTRY_RECOVER_INTERVAL seconds
+        if now - open_time >= REGISTRY_RECOVER_INTERVAL {
+            debug!("Node {} entering half-open state for recovery attempt", self.address);
+            return true;
+        }
+
+        false
+    }
+
+    /// Record a successful request
+    pub fn record_success(&self) {
+        self.available.store(true, Ordering::SeqCst);
+        self.fail_count.store(0, Ordering::SeqCst);
+        self.last_success_time.store(now_secs(), Ordering::SeqCst);
+        debug!("Node {} marked as available after success", self.address);
+    }
+
+    /// Record a failed request (timeout or error)
+    /// Returns true if the circuit was just opened (node became unavailable)
+    pub fn record_failure(&self) -> bool {
+        let count = self.fail_count.fetch_add(1, Ordering::SeqCst) + 1;
+        self.last_fail_time.store(now_secs(), Ordering::SeqCst);
+
+        // Open circuit after REGISTRY_FAIL_THRESHOLD consecutive failures
+        if count >= REGISTRY_FAIL_THRESHOLD {
+            let was_available = self.available.swap(false, Ordering::SeqCst);
+            if was_available {
+                self.circuit_open_time.store(now_secs(), Ordering::SeqCst);
+                warn!("Node {} circuit opened after {} consecutive failures", self.address, count);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Get the node address
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    /// Reset the circuit breaker state
+    pub fn reset(&self) {
+        self.available.store(true, Ordering::SeqCst);
+        self.fail_count.store(0, Ordering::SeqCst);
+        self.circuit_open_time.store(0, Ordering::SeqCst);
+    }
+}
+
+/// Registry circuit breaker manager
+/// Manages circuit breakers for multiple registry nodes
+pub struct RegistryCircuitBreaker {
+    /// Circuit breakers by node address
+    breakers: Mutex<HashMap<String, Arc<NodeCircuitBreaker>>>,
+}
+
+impl RegistryCircuitBreaker {
+    /// Create a new registry circuit breaker manager
+    pub fn new() -> Self {
+        Self {
+            breakers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Get or create a circuit breaker for a node
+    pub fn get_breaker(&self, address: &str) -> Arc<NodeCircuitBreaker> {
+        let mut breakers = self.breakers.lock();
+        breakers
+            .entry(address.to_string())
+            .or_insert_with(|| Arc::new(NodeCircuitBreaker::new(address)))
+            .clone()
+    }
+
+    /// Get all available nodes from a list
+    pub fn filter_available(&self, addresses: &[String]) -> Vec<String> {
+        let breakers = self.breakers.lock();
+        addresses
+            .iter()
+            .filter(|addr| {
+                breakers
+                    .get(*addr)
+                    .map(|b| b.is_available())
+                    .unwrap_or(true) // New nodes are considered available
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Get the number of available nodes
+    pub fn available_count(&self, addresses: &[String]) -> usize {
+        self.filter_available(addresses).len()
+    }
+
+    /// Reset all circuit breakers
+    pub fn reset_all(&self) {
+        let breakers = self.breakers.lock();
+        for breaker in breakers.values() {
+            breaker.reset();
+        }
+    }
+}
+
+impl Default for RegistryCircuitBreaker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get current time in seconds
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+/// Registry circuit breaker constants
+/// Number of consecutive failures before opening circuit
+const REGISTRY_FAIL_THRESHOLD: i32 = 1;  // Open immediately on first failure
+/// Interval to try recovery (seconds)
+const REGISTRY_RECOVER_INTERVAL: i64 = 30;
 
 /// Registrar trait for service registration and discovery
 #[async_trait]
@@ -67,20 +240,33 @@ impl Registrar for DirectRegistrar {
 }
 
 /// Tars registry client (communicates with tars.tarsregistry.QueryObj)
+///
+/// Supports multiple registry nodes with circuit breaker for each node.
+/// When a node fails (timeout or error), it will be marked as unavailable
+/// and requests will be routed to other available nodes.
 pub struct TarsRegistry {
     /// Locator string (e.g., "tars.tarsregistry.QueryObj@tcp -h 127.0.0.1 -p 17890")
     locator: String,
-    /// Cached client connection
-    client: RwLock<Option<AsyncSimpleTarsClient>>,
+    /// All registry node addresses parsed from locator
+    nodes: Vec<String>,
+    /// Circuit breaker for managing node availability
+    circuit_breaker: RegistryCircuitBreaker,
+    /// Current node index for round-robin selection
+    current_index: std::sync::atomic::AtomicUsize,
     /// Query timeout in milliseconds
     timeout: i32,
 }
 
 impl TarsRegistry {
     pub fn new(locator: &str) -> Self {
+        let nodes = Self::parse_all_nodes(locator);
+        info!("TarsRegistry initialized with {} nodes: {:?}", nodes.len(), nodes);
+
         Self {
             locator: locator.to_string(),
-            client: RwLock::new(None),
+            nodes,
+            circuit_breaker: RegistryCircuitBreaker::new(),
+            current_index: std::sync::atomic::AtomicUsize::new(0),
             timeout: 5000,
         }
     }
@@ -94,10 +280,92 @@ impl TarsRegistry {
         &self.locator
     }
 
-    /// Parse locator string to get endpoint
-    fn parse_locator(&self) -> Option<String> {
-        // Parse format: "ServiceName@tcp -h host -p port"
-        let parts: Vec<&str> = self.locator.split('@').collect();
+    /// Get the circuit breaker for external access
+    pub fn circuit_breaker(&self) -> &RegistryCircuitBreaker {
+        &self.circuit_breaker
+    }
+
+    /// Get all configured nodes
+    pub fn nodes(&self) -> &[String] {
+        &self.nodes
+    }
+
+    /// Get available nodes count
+    pub fn available_nodes_count(&self) -> usize {
+        self.circuit_breaker.available_count(&self.nodes)
+    }
+
+    /// Parse all nodes from locator string
+    /// Supports formats:
+    /// - Single node: "ServiceName@tcp -h host -p port"
+    /// - Multiple nodes: "ServiceName@tcp -h host1 -p port1:tcp -h host2 -p port2"
+    fn parse_all_nodes(locator: &str) -> Vec<String> {
+        let mut nodes = Vec::new();
+
+        // Split by '@' to get service name and endpoints
+        let parts: Vec<&str> = locator.split('@').collect();
+        if parts.len() < 2 {
+            return nodes;
+        }
+
+        // The rest after '@' contains endpoint definitions
+        let endpoints_str = parts[1..].join("@");
+
+        // Split by protocol indicators (:tcp, :udp, :ssl) to get individual endpoints
+        // Format: "tcp -h host1 -p port1:tcp -h host2 -p port2"
+        let endpoint_parts: Vec<&str> = endpoints_str
+            .split(":tcp")
+            .flat_map(|s| s.split(":udp"))
+            .flat_map(|s| s.split(":ssl"))
+            .collect();
+
+        for part in endpoint_parts {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            // Parse host and port from this endpoint part
+            // Format: "tcp -h host -p port" or "-h host -p port" or just host/port tokens
+            let tokens: Vec<&str> = part.split_whitespace().collect();
+            let mut host = String::new();
+            let mut port = String::new();
+
+            let mut i = 0;
+            while i < tokens.len() {
+                match tokens[i] {
+                    "-h" if i + 1 < tokens.len() => {
+                        host = tokens[i + 1].to_string();
+                        i += 2;
+                    }
+                    "-p" if i + 1 < tokens.len() => {
+                        // Port might have trailing colon from split
+                        let port_str = tokens[i + 1].trim_end_matches(':');
+                        port = port_str.to_string();
+                        i += 2;
+                    }
+                    _ => i += 1,
+                }
+            }
+
+            if !host.is_empty() && !port.is_empty() {
+                nodes.push(format!("{}:{}", host, port));
+            }
+        }
+
+        // If no nodes found, try simple parsing
+        if nodes.is_empty() {
+            if let Some(addr) = Self::parse_single_locator(locator) {
+                nodes.push(addr);
+            }
+        }
+
+        nodes
+    }
+
+    /// Parse a single locator string to get one endpoint
+    fn parse_single_locator(locator: &str) -> Option<String> {
+        let parts: Vec<&str> = locator.split('@').collect();
         if parts.len() < 2 {
             return None;
         }
@@ -125,25 +393,43 @@ impl TarsRegistry {
         Some(format!("{}:{}", host, port))
     }
 
-    /// Get or create client connection
-    async fn get_client(&self) -> Result<Arc<AsyncSimpleTarsClient>> {
-        // Check if we have a valid client
-        {
-            let guard = self.client.read().await;
-            if let Some(ref client) = *guard {
-                // Return a reference wrapped in Arc (we'll need to restructure)
-                // For simplicity, we'll always create a new connection per query
+    /// Select an available node using round-robin with circuit breaker
+    fn select_node(&self) -> Option<String> {
+        let available = self.circuit_breaker.filter_available(&self.nodes);
+
+        if available.is_empty() {
+            warn!("No available registry nodes! All {} nodes are in circuit-open state", self.nodes.len());
+            // If all nodes are unavailable, try to use any node (for recovery attempt)
+            if !self.nodes.is_empty() {
+                let idx = self.current_index.fetch_add(1, Ordering::SeqCst) % self.nodes.len();
+                return Some(self.nodes[idx].clone());
             }
+            return None;
         }
 
-        // Need to create a new client
-        let addr = self.parse_locator()
-            .ok_or_else(|| TarsError::Config("Invalid locator format".into()))?;
+        // Round-robin selection among available nodes
+        let idx = self.current_index.fetch_add(1, Ordering::SeqCst) % available.len();
+        Some(available[idx].clone())
+    }
 
-        let client = AsyncSimpleTarsClient::connect(&addr).await?;
+    /// Connect to a specific node
+    async fn connect_to_node(&self, addr: &str) -> Result<AsyncSimpleTarsClient> {
+        let timeout_duration = std::time::Duration::from_millis(self.timeout as u64);
 
-        info!("Connected to registry: {}", addr);
-        Ok(Arc::new(client))
+        match tokio::time::timeout(timeout_duration, AsyncSimpleTarsClient::connect(addr)).await {
+            Ok(Ok(client)) => {
+                debug!("Connected to registry node: {}", addr);
+                Ok(client)
+            }
+            Ok(Err(e)) => {
+                error!("Failed to connect to registry node {}: {}", addr, e);
+                Err(e)
+            }
+            Err(_) => {
+                error!("Connection timeout to registry node: {}", addr);
+                Err(TarsError::Timeout(self.timeout as u64))
+            }
+        }
     }
 
     /// Convert EndpointF to Endpoint
@@ -162,9 +448,29 @@ impl TarsRegistry {
         ep
     }
 
-    /// Query endpoints using findObjectById4All
-    async fn do_query(&self, id: &str, func: &str, set: Option<&str>) -> Result<(Vec<Endpoint>, Vec<Endpoint>)> {
-        let client = self.get_client().await?;
+    /// Execute query on a specific node with circuit breaker
+    async fn query_on_node(&self, addr: &str, id: &str, func: &str, set: Option<&str>) -> Result<(Vec<Endpoint>, Vec<Endpoint>)> {
+        let breaker = self.circuit_breaker.get_breaker(addr);
+
+        // Try to connect and query
+        let result = self.do_query_internal(addr, id, func, set).await;
+
+        match &result {
+            Ok(_) => {
+                breaker.record_success();
+            }
+            Err(e) => {
+                warn!("Query failed on node {}: {}", addr, e);
+                breaker.record_failure();
+            }
+        }
+
+        result
+    }
+
+    /// Internal query implementation on a specific node
+    async fn do_query_internal(&self, addr: &str, id: &str, func: &str, set: Option<&str>) -> Result<(Vec<Endpoint>, Vec<Endpoint>)> {
+        let client = self.connect_to_node(addr).await?;
 
         // Build request body
         let mut body_buf = Buffer::new();
@@ -181,8 +487,13 @@ impl TarsRegistry {
         req.s_buffer = body_buf.to_bytes();
         req.i_timeout = self.timeout;
 
-        // Invoke
-        let rsp = client.invoke(&req).await?;
+        // Invoke with timeout
+        let timeout_duration = std::time::Duration::from_millis(self.timeout as u64);
+        let rsp = match tokio::time::timeout(timeout_duration, client.invoke(&req)).await {
+            Ok(Ok(rsp)) => rsp,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(TarsError::Timeout(self.timeout as u64)),
+        };
 
         if rsp.i_ret != 0 {
             return Err(TarsError::ServerError {
@@ -206,10 +517,50 @@ impl TarsRegistry {
         let active: Vec<Endpoint> = active_epf.iter().map(Self::convert_endpoint).collect();
         let inactive: Vec<Endpoint> = inactive_epf.iter().map(Self::convert_endpoint).collect();
 
-        debug!("Query {} returned {} active, {} inactive endpoints",
-               id, active.len(), inactive.len());
+        debug!("Query {} on node {} returned {} active, {} inactive endpoints",
+               id, addr, active.len(), inactive.len());
 
         Ok((active, inactive))
+    }
+
+    /// Query endpoints with automatic failover
+    async fn do_query(&self, id: &str, func: &str, set: Option<&str>) -> Result<(Vec<Endpoint>, Vec<Endpoint>)> {
+        // Try each available node until one succeeds
+        let mut last_error: Option<TarsError> = None;
+        let mut tried_nodes = Vec::new();
+
+        // Try up to nodes.len() times to handle all nodes
+        for _ in 0..self.nodes.len() {
+            let node = match self.select_node() {
+                Some(n) => n,
+                None => {
+                    return Err(TarsError::NoEndpoint);
+                }
+            };
+
+            // Skip if already tried this node
+            if tried_nodes.contains(&node) {
+                continue;
+            }
+            tried_nodes.push(node.clone());
+
+            debug!("Trying registry node: {}", node);
+
+            match self.query_on_node(&node, id, func, set).await {
+                Ok(result) => {
+                    return Ok(result);
+                }
+                Err(e) => {
+                    warn!("Registry query failed on node {}: {}, trying next...", node, e);
+                    last_error = Some(e);
+                    // Continue to next node
+                }
+            }
+        }
+
+        // All nodes failed
+        error!("All registry nodes failed for query: {}", id);
+        Err(last_error.unwrap_or(TarsError::NoEndpoint))
     }
 }
 
@@ -323,10 +674,72 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_locator() {
+    fn test_parse_single_node() {
         let registry = TarsRegistry::new("tars.tarsregistry.QueryObj@tcp -h 192.168.1.1 -p 17890");
-        let addr = registry.parse_locator().unwrap();
-        assert_eq!(addr, "192.168.1.1:17890");
+        assert_eq!(registry.nodes().len(), 1);
+        assert_eq!(registry.nodes()[0], "192.168.1.1:17890");
+    }
+
+    #[test]
+    fn test_parse_multiple_nodes() {
+        let registry = TarsRegistry::new(
+            "tars.tarsregistry.QueryObj@tcp -h 192.168.1.1 -p 17890:tcp -h 192.168.1.2 -p 17891"
+        );
+        assert_eq!(registry.nodes().len(), 2);
+        assert!(registry.nodes().contains(&"192.168.1.1:17890".to_string()));
+        assert!(registry.nodes().contains(&"192.168.1.2:17891".to_string()));
+    }
+
+    #[test]
+    fn test_circuit_breaker_initial_state() {
+        let breaker = NodeCircuitBreaker::new("127.0.0.1:17890");
+        assert!(breaker.is_available());
+    }
+
+    #[test]
+    fn test_circuit_breaker_opens_on_failure() {
+        let breaker = NodeCircuitBreaker::new("127.0.0.1:17890");
+
+        // First failure should open circuit (REGISTRY_FAIL_THRESHOLD = 1)
+        let opened = breaker.record_failure();
+        assert!(opened);
+        assert!(!breaker.available.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_circuit_breaker_success_resets() {
+        let breaker = NodeCircuitBreaker::new("127.0.0.1:17890");
+
+        // Open the circuit
+        breaker.record_failure();
+        assert!(!breaker.available.load(Ordering::SeqCst));
+
+        // Success should reset
+        breaker.record_success();
+        assert!(breaker.available.load(Ordering::SeqCst));
+        assert_eq!(breaker.fail_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_registry_circuit_breaker_manager() {
+        let manager = RegistryCircuitBreaker::new();
+        let addresses = vec![
+            "192.168.1.1:17890".to_string(),
+            "192.168.1.2:17890".to_string(),
+        ];
+
+        // Initially all should be available
+        let available = manager.filter_available(&addresses);
+        assert_eq!(available.len(), 2);
+
+        // Mark one as failed
+        let breaker = manager.get_breaker("192.168.1.1:17890");
+        breaker.record_failure();
+
+        // Now only one should be available
+        let available = manager.filter_available(&addresses);
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0], "192.168.1.2:17890");
     }
 
     #[test]
