@@ -142,7 +142,7 @@ impl Endpoint {
 
     /// Parse from endpoint string
     pub fn from_string(s: &str) -> Option<Self> {
-        crate::util::parse_endpoint_string(s)
+        parse_endpoint_string(s)
     }
 }
 
@@ -210,6 +210,76 @@ impl ServantInstance {
     }
 }
 
+/// Parse endpoint string like "tcp -h 127.0.0.1 -p 10000 -t 3000"
+pub fn parse_endpoint_string(s: &str) -> Option<Endpoint> {
+    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    let proto = match parts[0].to_lowercase().as_str() {
+        "tcp" => TransportProtocol::Tcp,
+        "udp" => TransportProtocol::Udp,
+        "ssl" => TransportProtocol::Ssl,
+        _ => return None,
+    };
+
+    let mut host = String::new();
+    let mut port: u16 = 0;
+    let mut timeout: u64 = 3000;
+
+    let mut i = 1;
+    while i < parts.len() {
+        match parts[i] {
+            "-h" if i + 1 < parts.len() => {
+                host = parts[i + 1].to_string();
+                i += 2;
+            }
+            "-p" if i + 1 < parts.len() => {
+                port = parts[i + 1].parse().unwrap_or(0);
+                i += 2;
+            }
+            "-t" if i + 1 < parts.len() => {
+                timeout = parts[i + 1].parse().unwrap_or(3000);
+                i += 2;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    if host.is_empty() || port == 0 {
+        return None;
+    }
+
+    Some(Endpoint {
+        host,
+        port,
+        timeout,
+        istcp: proto.as_i32(),
+        ..Default::default()
+    })
+}
+
+/// Parse object name with endpoints
+/// Format: "App.Server.Obj" or "App.Server.Obj@tcp -h 127.0.0.1 -p 10000"
+pub fn parse_obj_name(obj_name: &str) -> (String, Vec<Endpoint>) {
+    let parts: Vec<&str> = obj_name.splitn(2, '@').collect();
+    let name = parts[0].to_string();
+
+    let endpoints = if parts.len() > 1 {
+        parts[1]
+            .split(':')
+            .filter_map(|s| parse_endpoint_string(s.trim()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    (name, endpoints)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +338,36 @@ mod tests {
         let ep = Endpoint::tcp("127.0.0.1", 10000);
         let instance = ServantInstance::new("Test", "HelloServer", "HelloObj", ep);
         assert_eq!(instance.object_name(), "Test.HelloServer.HelloObj");
+    }
+
+    #[test]
+    fn test_parse_endpoint_string() {
+        let ep = parse_endpoint_string("tcp -h 127.0.0.1 -p 10000 -t 5000").unwrap();
+        assert_eq!(ep.host, "127.0.0.1");
+        assert_eq!(ep.port, 10000);
+        assert_eq!(ep.timeout, 5000);
+        assert_eq!(ep.istcp, 1); // TCP
+
+        let ep = parse_endpoint_string("udp -h 192.168.1.1 -p 8080").unwrap();
+        assert_eq!(ep.host, "192.168.1.1");
+        assert_eq!(ep.port, 8080);
+        assert_eq!(ep.istcp, 0); // UDP
+    }
+
+    #[test]
+    fn test_parse_obj_name() {
+        let (name, eps) = parse_obj_name("Test.HelloServer.HelloObj");
+        assert_eq!(name, "Test.HelloServer.HelloObj");
+        assert!(eps.is_empty());
+
+        let (name, eps) = parse_obj_name("Test.HelloServer.HelloObj@tcp -h 127.0.0.1 -p 10000");
+        assert_eq!(name, "Test.HelloServer.HelloObj");
+        assert_eq!(eps.len(), 1);
+        assert_eq!(eps[0].host, "127.0.0.1");
+        assert_eq!(eps[0].port, 10000);
+
+        let (name, eps) = parse_obj_name("Test.HelloServer.HelloObj@tcp -h 127.0.0.1 -p 10000:tcp -h 127.0.0.1 -p 10001");
+        assert_eq!(name, "Test.HelloServer.HelloObj");
+        assert_eq!(eps.len(), 2);
     }
 }

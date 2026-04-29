@@ -10,7 +10,8 @@ use once_cell::sync::OnceCell;
 use crate::{Result, TarsError, Endpoint};
 use crate::servant::ServantProxy;
 use crate::transport::TarsClientConfig;
-use crate::util::{ClientConfig, parse_obj_name};
+use crate::util::ClientConfig;
+use crate::endpoint::parse_obj_name;
 
 /// Global communicator instance
 static GLOBAL_COMMUNICATOR: OnceCell<Arc<Communicator>> = OnceCell::new();
