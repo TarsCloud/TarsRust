@@ -4,6 +4,7 @@
 
 # Claude Code
 .claude/
+.worktrees/
 
 # Cargo.lock 通常提交（库项目可选择不提交）
 # Cargo.lock
