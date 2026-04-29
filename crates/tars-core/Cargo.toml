@@ -1,0 +1,15 @@
+[package]
+name = "tars-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core types (error, consts), request Context, and Tars binary codec"
+
+[dependencies]
+bytes.workspace = true
+byteorder.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true

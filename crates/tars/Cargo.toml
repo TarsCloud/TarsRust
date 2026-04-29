@@ -1,0 +1,4 @@
+[package]
+name = "tars"
+version.workspace = true
+edition.workspace = true

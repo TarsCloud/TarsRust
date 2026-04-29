@@ -2,10 +2,8 @@
 //!
 //! Common utilities used across the framework.
 
-mod context;
 mod config;
 
-pub use context::Context;
 pub use config::*;
 
 use std::sync::atomic::{AtomicI32, Ordering};

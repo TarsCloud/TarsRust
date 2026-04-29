@@ -1,0 +1,4 @@
+[package]
+name = "tars-registry"
+version.workspace = true
+edition.workspace = true
