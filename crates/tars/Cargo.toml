@@ -2,3 +2,20 @@
 name = "tars"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tars RPC Framework for Rust - A high-performance microservice communication framework"
+keywords = ["rpc", "microservice", "tars", "distributed"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+tars-core.workspace = true
+tars-protocol.workspace = true
+tars-util.workspace = true
+tars-transport.workspace = true
+tars-registry.workspace = true
+tars-rpc.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

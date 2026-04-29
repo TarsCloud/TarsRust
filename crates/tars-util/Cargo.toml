@@ -2,3 +2,17 @@
 name = "tars-util"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared utilities and load-balancing selectors"
+
+[dependencies]
+tars-core.workspace = true
+tars-protocol.workspace = true
+parking_lot.workspace = true
+once_cell.workspace = true
+rand.workspace = true
+crc32fast.workspace = true
+serde.workspace = true
+toml.workspace = true

@@ -2,3 +2,12 @@
 name = "tars-protocol"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tars wire protocol packets and endpoint types"
+
+[dependencies]
+tars-core.workspace = true
+bytes.workspace = true
+byteorder.workspace = true

@@ -2,3 +2,27 @@
 name = "tars-rpc"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Servant proxy, communicator, and application lifecycle"
+
+[dependencies]
+tars-core.workspace = true
+tars-protocol.workspace = true
+tars-transport.workspace = true
+tars-util.workspace = true
+tars-registry.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+once_cell.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+toml.workspace = true
+signal-hook.workspace = true
+signal-hook-tokio.workspace = true
+md-5.workspace = true
+hex.workspace = true

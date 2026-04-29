@@ -2,3 +2,24 @@
 name = "tars-transport"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tars TCP/UDP/TLS transports and filter middleware"
+
+[dependencies]
+tars-core.workspace = true
+tars-protocol.workspace = true
+tars-util.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+rustls.workspace = true
+rustls-pemfile.workspace = true
+webpki-roots.workspace = true
+bytes.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+once_cell.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+chrono.workspace = true
