@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/tars-core",
-    "crates/tars-protocol",
-    "crates/tars-util",
-    "crates/tars-transport",
-    "crates/tars-registry",
-    "crates/tars-rpc",
-    "crates/tars",
+    "tars-core",
+    "tars-protocol",
+    "tars-util",
+    "tars-transport",
+    "tars-registry",
+    "tars-rpc",
+    "tars",
 ]
-default-members = ["crates/tars"]
+default-members = ["tars"]
 
 [workspace.package]
 version = "0.1.0"
@@ -20,12 +20,12 @@ repository = "https://github.com/TarsCloud/TarsRust"
 
 [workspace.dependencies]
 # Internal crates
-tars-core = { path = "crates/tars-core", version = "0.1.0" }
-tars-protocol = { path = "crates/tars-protocol", version = "0.1.0" }
-tars-util = { path = "crates/tars-util", version = "0.1.0" }
-tars-transport = { path = "crates/tars-transport", version = "0.1.0" }
-tars-registry = { path = "crates/tars-registry", version = "0.1.0" }
-tars-rpc = { path = "crates/tars-rpc", version = "0.1.0" }
+tars-core = { path = "tars-core", version = "0.1.0" }
+tars-protocol = { path = "tars-protocol", version = "0.1.0" }
+tars-util = { path = "tars-util", version = "0.1.0" }
+tars-transport = { path = "tars-transport", version = "0.1.0" }
+tars-registry = { path = "tars-registry", version = "0.1.0" }
+tars-rpc = { path = "tars-rpc", version = "0.1.0" }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
