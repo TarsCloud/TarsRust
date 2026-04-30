@@ -1,0 +1,31 @@
+module Demo
+{
+    enum Color
+    {
+        RED = 0,
+        GREEN = 1,
+        BLUE = 2
+    };
+
+    struct Point
+    {
+        0 require int x;
+        1 require int y;
+        2 optional string label;
+    };
+
+    struct Shape
+    {
+        0 require string name;
+        1 require vector<Point> points;
+        2 optional Color color;
+        3 optional map<string, int> tags;
+    };
+
+    interface Drawer
+    {
+        Shape draw(Shape input, int repeats);
+        int count(vector<int> values, out vector<int> doubled);
+        void noop();
+    };
+};

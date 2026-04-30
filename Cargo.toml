@@ -8,6 +8,7 @@ members = [
     "tars-registry",
     "tars-rpc",
     "tars",
+    "examples/hello-rs",
 ]
 default-members = ["tars"]
 
