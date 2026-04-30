@@ -1,0 +1,52 @@
+// Example Tars IDL file for testing tarsc
+
+module Test
+{
+    // Enum definition
+    enum Status
+    {
+        OK = 0,
+        ERROR = 1,
+        PENDING = 2
+    };
+
+    // Constant definitions
+    const int MAX_SIZE = 1024;
+    const string VERSION = "1.0.0";
+
+    // Struct definition
+    struct UserInfo
+    {
+        0 require int id;
+        1 require string name;
+        2 optional string email = "";
+        3 optional int age = 0;
+        4 optional Status status = OK;
+        5 optional vector<string> tags;
+        6 optional map<string, string> metadata;
+    };
+
+    struct Request
+    {
+        0 require int requestId;
+        1 require UserInfo user;
+        2 optional string action;
+    };
+
+    struct Response
+    {
+        0 require int code;
+        1 require string message;
+        2 optional UserInfo user;
+    };
+
+    // Interface definition
+    interface UserService
+    {
+        Response getUser(int userId);
+        Response createUser(UserInfo user);
+        Response updateUser(int userId, UserInfo user);
+        Response deleteUser(int userId);
+        int batchCreate(vector<UserInfo> users, out vector<int> ids);
+    };
+};

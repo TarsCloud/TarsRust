@@ -1,0 +1,6 @@
+# 编译产物
+/tarsc
+
+# 生成产物
+/output/
+/test_output/
