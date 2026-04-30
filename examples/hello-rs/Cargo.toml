@@ -11,3 +11,13 @@ tars-rpc.workspace = true
 tars-transport.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[[bin]]
+name = "hello-server"
+path = "src/bin/hello_server.rs"
+
+[[bin]]
+name = "hello-client"
+path = "src/bin/hello_client.rs"

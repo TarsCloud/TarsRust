@@ -274,6 +274,8 @@ dependencies = [
  "tars-rpc",
  "tars-transport",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

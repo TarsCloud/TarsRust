@@ -22,8 +22,8 @@ pub struct AdapterProxy {
     client: Arc<TarsClient>,
     /// Protocol handler
     protocol: Arc<TarsProtocol>,
-    /// Response channels: request_id -> response sender
-    responses: DashMap<i32, oneshot::Sender<ResponsePacket>>,
+    /// Response channels: request_id -> response sender (shared with AdapterProtocolHandler)
+    responses: Arc<DashMap<i32, oneshot::Sender<ResponsePacket>>>,
     /// Fail count
     fail_count: AtomicI32,
     /// Last fail count (consecutive)
@@ -51,16 +51,17 @@ impl AdapterProxy {
     pub fn new(endpoint: Endpoint, config: TarsClientConfig) -> Arc<Self> {
         let protocol = Arc::new(TarsProtocol::new());
         let address = endpoint.address();
+        let responses = Arc::new(DashMap::new());
 
         let adapter = Arc::new(Self {
             endpoint,
             client: TarsClient::new(
                 &address,
-                Arc::new(AdapterProtocolHandler::new()),
+                Arc::new(AdapterProtocolHandler::new(Arc::clone(&responses))),
                 config,
             ),
             protocol,
-            responses: DashMap::new(),
+            responses,
             fail_count: AtomicI32::new(0),
             last_fail_count: AtomicI32::new(0),
             send_count: AtomicI32::new(0),
@@ -237,11 +238,13 @@ fn now_secs() -> i64 {
 }
 
 /// Protocol handler for adapter
-struct AdapterProtocolHandler;
+struct AdapterProtocolHandler {
+    responses: Arc<DashMap<i32, oneshot::Sender<ResponsePacket>>>,
+}
 
 impl AdapterProtocolHandler {
-    fn new() -> Self {
-        Self
+    fn new(responses: Arc<DashMap<i32, oneshot::Sender<ResponsePacket>>>) -> Self {
+        Self { responses }
     }
 }
 
@@ -250,8 +253,20 @@ impl ClientProtocol for AdapterProtocolHandler {
         tars_core::codec::parse_package(buff)
     }
 
-    fn recv(&self, _pkg: Vec<u8>) {
-        // Response handling is done through the responses map
+    fn recv(&self, pkg: Vec<u8>) {
+        let resp = match ResponsePacket::decode(&pkg) {
+            Ok(r) => r,
+            Err(e) => {
+                debug!("Failed to decode response: {}", e);
+                return;
+            }
+        };
+
+        if let Some((_, tx)) = self.responses.remove(&resp.i_request_id) {
+            let _ = tx.send(resp);
+        } else {
+            debug!("No handler for request {}", resp.i_request_id);
+        }
     }
 }
 
